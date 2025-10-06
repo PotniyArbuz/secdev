@@ -1,11 +1,13 @@
-from datetime import date, datetime
-from typing import List, Optional
+from datetime import datetime
+from typing import List
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import BaseModel, field_validator
+
+from app.exceptions import ApiError
+from app.models import Checkin, CheckinCreate, Habit, HabitCreate
 
 app = FastAPI(title="Habit Tracker", version="0.1.0")
 
@@ -16,13 +18,6 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     if token != "fake-token":
         raise HTTPException(status_code=401, detail="Invalid token")
     return {"user_id": 1}
-
-
-class ApiError(Exception):
-    def __init__(self, code: str, message: str, status: int = 400):
-        self.code = code
-        self.message = message
-        self.status = status
 
 
 @app.exception_handler(ApiError)
@@ -48,33 +43,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         status_code=422,
         content={"error": {"code": "validation_error", "message": str(exc)}},
     )
-
-
-class HabitCreate(BaseModel):
-    name: str
-    periodicity: str
-
-    @field_validator("periodicity")
-    @classmethod
-    def validate_periodicity(cls, v):
-        if v not in ["daily", "weekly"]:
-            raise ValueError("Periodicity must be 'daily' or 'weekly'")
-        return v
-
-
-class Habit(HabitCreate):
-    id: int
-    owner_id: int
-
-
-class CheckinCreate(BaseModel):
-    date: date
-    value: Optional[str] = None
-
-
-class Checkin(CheckinCreate):
-    id: int
-    habit_id: int
 
 
 _DB = {"habits": [], "checkins": []}
