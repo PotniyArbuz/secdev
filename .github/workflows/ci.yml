@@ -15,6 +15,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prevent direct push to main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "You have to use PR."
+          exit 1
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"

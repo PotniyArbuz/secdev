@@ -1,14 +1,23 @@
-from fastapi import FastAPI, HTTPException, Request
+from datetime import datetime
+from typing import List
+
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordBearer
 
-app = FastAPI(title="SecDev Course App", version="0.1.0")
+from app.exceptions import ApiError
+from app.models import Checkin, CheckinCreate, Habit, HabitCreate
+
+app = FastAPI(title="Habit Tracker", version="0.1.0")
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
-class ApiError(Exception):
-    def __init__(self, code: str, message: str, status: int = 400):
-        self.code = code
-        self.message = message
-        self.status = status
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    if token != "fake-token":
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return {"user_id": 1}
 
 
 @app.exception_handler(ApiError)
@@ -21,7 +30,6 @@ async def api_error_handler(request: Request, exc: ApiError):
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    # Normalize FastAPI HTTPException into our error envelope
     detail = exc.detail if isinstance(exc.detail, str) else "http_error"
     return JSONResponse(
         status_code=exc.status_code,
@@ -29,29 +37,78 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     )
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"error": {"code": "validation_error", "message": str(exc)}},
+    )
+
+
+_DB = {"habits": [], "checkins": []}
+_habit_id_counter = 0
+_checkin_id_counter = 0
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 
-# Example minimal entity (for tests/demo)
-_DB = {"items": []}
+@app.post("/habits", response_model=Habit)
+def create_habit(habit: HabitCreate, current_user=Depends(get_current_user)):
+    global _habit_id_counter
+    _habit_id_counter += 1
+    new_habit = Habit(id=_habit_id_counter, owner_id=current_user["user_id"], **habit.model_dump())
+    _DB["habits"].append(new_habit)
+    return new_habit
 
 
-@app.post("/items")
-def create_item(name: str):
-    if not name or len(name) > 100:
-        raise ApiError(
-            code="validation_error", message="name must be 1..100 chars", status=422
-        )
-    item = {"id": len(_DB["items"]) + 1, "name": name}
-    _DB["items"].append(item)
-    return item
+@app.get("/habits", response_model=List[Habit])
+def list_habits(current_user=Depends(get_current_user)):
+    return [h for h in _DB["habits"] if h.owner_id == current_user["user_id"]]
 
 
-@app.get("/items/{item_id}")
-def get_item(item_id: int):
-    for it in _DB["items"]:
-        if it["id"] == item_id:
-            return it
-    raise ApiError(code="not_found", message="item not found", status=404)
+@app.get("/habits/{habit_id}", response_model=Habit)
+def get_habit(habit_id: int, current_user=Depends(get_current_user)):
+    for h in _DB["habits"]:
+        if h.id == habit_id and h.owner_id == current_user["user_id"]:
+            return h
+    raise ApiError(code="not_found", message="habit not found", status=404)
+
+
+@app.post("/habits/{habit_id}/checkins", response_model=Checkin)
+def add_checkin(habit_id: int, checkin: CheckinCreate, current_user=Depends(get_current_user)):
+    habit = next(
+        (h for h in _DB["habits"] if h.id == habit_id and h.owner_id == current_user["user_id"]),
+        None,
+    )
+    if not habit:
+        raise ApiError(code="not_found", message="habit not found", status=404)
+    global _checkin_id_counter
+    _checkin_id_counter += 1
+    new_checkin = Checkin(id=_checkin_id_counter, habit_id=habit_id, **checkin.model_dump())
+    _DB["checkins"].append(new_checkin)
+    return new_checkin
+
+
+@app.get("/habits/{habit_id}/checkins", response_model=List[Checkin])
+def list_checkins(habit_id: int, current_user=Depends(get_current_user)):
+    habit = next(
+        (h for h in _DB["habits"] if h.id == habit_id and h.owner_id == current_user["user_id"]),
+        None,
+    )
+    if not habit:
+        raise ApiError(code="not_found", message="habit not found", status=404)
+    return [c for c in _DB["checkins"] if c.habit_id == habit_id]
+
+
+@app.get("/stats")
+def get_stats(current_user=Depends(get_current_user)):
+    user_habits = [h for h in _DB["habits"] if h.owner_id == current_user["user_id"]]
+    user_checkins = [c for c in _DB["checkins"] if any(h.id == c.habit_id for h in user_habits)]
+    return {
+        "total_habits": len(user_habits),
+        "total_checkins": len(user_checkins),
+        "last_update": datetime.now().isoformat(),
+    }
