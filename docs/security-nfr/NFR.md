@@ -1,0 +1,10 @@
+| ID     | Название                 | Описание                                  | Метрика/Порог                 | Проверка (чем/где)                 | Компонент | Приоритет |
+|--------|--------------------------|-------------------------------------------|-------------------------------|------------------------------------|-----------|-----------|
+| NFR-01 | Аутентификация пользователей | Использовать JWT-токены для аутентификации пользователей | Все эндпойнты защищены, кроме /health; 100% запросов с валидным token | Unit-тесты в test_habits.py; CI с pytest | auth | High |
+| NFR-02 | Авторизация owner-only | Доступ к данным (habits, checkins) только владельцу (user_id) | 100% запросов проверяют owner_id; 0% несанкционированных доступов | Unit-тесты в test_habits.py; CI с pytest | api | High |
+| NFR-03 | Валидация periodicity | Поле periodicity в Habit только "daily" или "weekly" | 100% запросов с invalid periodicity возвращают 422; 0% ошибок | Unit-тесты в test_habits.py; CI с pytest | api | Medium |
+| NFR-04 | Производительность эндпойнтов | p95 времени ответа для CRUD ≤ 200 ms при 50 RPS | p95 ≤ 200 ms @ 50 RPS | Нагрузочный тест (locust или jmeter); CI с performance checks | api | High |
+| NFR-05 | Обработка ошибок | Все ошибки в формате JSON {"error": {"code": "...", "message": "..."}} | 100% ошибок в формате; 0% утечек стека | Unit-тесты в test_habits.py; CI с pytest | api | Medium |
+| NFR-06 | Защита от уязвимостей зависимостей | No High/Critical vulnerabilities in dependencies | ≤ 7 дней до устранения; 0 High/Critical | SCA в CI (dependabot или trivy); GitHub Security Alerts | build | High |
+| NFR-07 | Логирование ошибок | Логировать все 4xx/5xx ошибки с correlation_id | 100% ошибок залогированы; TTL логов ≥ 30 дней | Тесты в CI; мониторинг логов (stdout) | platform | Medium |
+| NFR-08 | Доступность сервиса | SLA доступности ≥ 99% | ≥ 99% uptime за 24 часа | Мониторинг (uptime robot или CI health check) | platform | High |
