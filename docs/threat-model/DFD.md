@@ -23,5 +23,3 @@ graph TD
         D
         G
     end
-
-
