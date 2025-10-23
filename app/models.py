@@ -1,11 +1,11 @@
-from datetime import date
+from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
-class HabitCreate(BaseModel):
-    name: str
+class HabitBase(BaseModel):
+    title: str
     periodicity: str
 
     @field_validator("periodicity")
@@ -16,16 +16,28 @@ class HabitCreate(BaseModel):
         return v
 
 
-class Habit(HabitCreate):
+class HabitCreate(HabitBase):
+    pass
+
+
+class Habit(HabitBase):
     id: int
     owner_id: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
-class CheckinCreate(BaseModel):
-    date: date
+class CheckinBase(BaseModel):
+    date: datetime
+
+
+class CheckinCreate(CheckinBase):
     value: Optional[str] = None
 
 
-class Checkin(CheckinCreate):
+class Checkin(CheckinBase):
     id: int
     habit_id: int
+
+    model_config = ConfigDict(from_attributes=True)

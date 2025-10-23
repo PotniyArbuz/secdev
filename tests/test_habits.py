@@ -6,7 +6,6 @@ client = TestClient(app)
 
 
 def setup_function():
-    global _habit_id_counter, _checkin_id_counter
     app.extra["_DB"] = {"habits": [], "checkins": []}
     app.extra["_habit_id_counter"] = 0
     app.extra["_checkin_id_counter"] = 0
@@ -15,7 +14,7 @@ def setup_function():
 def test_create_and_get_habit():
     headers = {"Authorization": "Bearer fake-token"}
     resp = client.post(
-        "/habits", json={"name": "Drink water", "periodicity": "daily"}, headers=headers
+        "/habits", json={"title": "Drink water", "periodicity": "daily"}, headers=headers
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -32,19 +31,19 @@ def test_list_habits():
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
 
-    client.post("/habits", json={"name": "Run", "periodicity": "daily"}, headers=headers)
+    client.post("/habits", json={"title": "Run", "periodicity": "daily"}, headers=headers)
     resp = client.get("/habits", headers=headers)
     assert len(resp.json()) > 0
 
 
 def test_add_and_list_checkin():
     headers = {"Authorization": "Bearer fake-token"}
-    r = client.post("/habits", json={"name": "Read", "periodicity": "daily"}, headers=headers)
+    r = client.post("/habits", json={"title": "Read", "periodicity": "daily"}, headers=headers)
     assert r.status_code == 200
     hid = r.json()["id"]
 
     r2 = client.post(
-        f"/habits/{hid}/checkins", json={"date": "2025-09-30", "value": "True"}, headers=headers
+        f"/habits/{hid}/checkins", json={"date": "2025-09-30T00:00:00"}, headers=headers
     )
     assert r2.status_code == 200
 
@@ -55,15 +54,19 @@ def test_add_and_list_checkin():
 
 def test_invalid_periodicity():
     headers = {"Authorization": "Bearer fake-token"}
-    resp = client.post("/habits", json={"name": "Run", "periodicity": "invalid"}, headers=headers)
+    resp = client.post("/habits", json={"title": "Run", "periodicity": "invalid"}, headers=headers)
     assert resp.status_code == 422
-    assert resp.json()["error"]["code"] == "validation_error"
-    assert "Periodicity must be 'daily' or 'weekly'" in resp.json()["error"]["message"]
+    data = resp.json()
+    assert data["type"] == "about:blank"
+    assert data["title"] == "Invalid input"
+    assert data["status"] == 422
+    assert data["detail"] == "Periodicity must be 'daily' or 'weekly'"
+    assert "correlation_id" in data
 
 
 def test_stats():
     headers = {"Authorization": "Bearer fake-token"}
-    client.post("/habits", json={"name": "Walk", "periodicity": "weekly"}, headers=headers)
+    client.post("/habits", json={"title": "Walk", "periodicity": "weekly"}, headers=headers)
     resp = client.get("/stats", headers=headers)
     assert resp.status_code == 200
     assert "total_habits" in resp.json()
@@ -72,4 +75,9 @@ def test_stats():
 def test_unauthorized():
     resp = client.get("/habits")
     assert resp.status_code == 401
-    assert resp.json()["error"]["code"] == "http_error"
+    data = resp.json()
+    assert data["type"] == "about:blank"
+    assert data["title"] == "Unauthorized"
+    assert data["status"] == 401
+    assert data["detail"] == "Invalid token"
+    assert "correlation_id" in data
