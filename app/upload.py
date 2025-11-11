@@ -15,7 +15,7 @@ def sniff_image_type(data: bytes) -> str | None:
     return None
 
 
-def secure_save(base_dir: str, data: bytes) -> str:
+def secure_save(base_dir: Path, data: bytes) -> Path:
     mt = sniff_image_type(data)
     if not mt:
         raise ValueError("bad_type")
@@ -30,4 +30,4 @@ def secure_save(base_dir: str, data: bytes) -> str:
     if any(p.is_symlink() for p in path.parents):
         raise ValueError("symlink_parent")
     path.write_bytes(data)
-    return str(path)
+    return path
