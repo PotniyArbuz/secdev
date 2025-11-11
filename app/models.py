@@ -39,5 +39,6 @@ class CheckinCreate(CheckinBase):
 class Checkin(CheckinBase):
     id: int
     habit_id: int
+    value: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -7,7 +7,12 @@ from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
+from app.db import Base
+from app.db import Checkin as CheckinDB
+from app.db import Habit as HabitDB
 from app.errors import problem
 from app.models import Checkin, CheckinCreate, Habit, HabitCreate
 from app.upload import secure_save
@@ -17,6 +22,19 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 UPLOAD_DIR = "uploads"
 Path(UPLOAD_DIR).mkdir(exist_ok=True)
+
+
+engine = create_engine("sqlite:///habits.db", connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base.metadata.create_all(bind=engine)
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -64,11 +82,6 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     return problem(exc.status_code, exc.detail or "Error", str(exc.detail))
 
 
-_DB = {"habits": [], "checkins": []}
-_habit_id_counter = 0
-_checkin_id_counter = 0
-
-
 @app.post("/upload")
 async def upload_avatar(file: UploadFile, current_user=Depends(get_current_user)):
     try:
@@ -85,62 +98,101 @@ def health():
 
 
 @app.post("/habits", response_model=Habit)
-def create_habit(habit: HabitCreate, current_user=Depends(get_current_user)):
-    global _habit_id_counter
-    _habit_id_counter += 1
-    new_habit = Habit(
-        id=_habit_id_counter,
+def create_habit(
+    habit: HabitCreate,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    db_habit = HabitDB(
         owner_id=current_user["user_id"],
         created_at=datetime.now(),
         **habit.model_dump(),
     )
-    _DB["habits"].append(new_habit)
-    return new_habit
+    db.add(db_habit)
+    db.commit()
+    db.refresh(db_habit)
+    return db_habit
 
 
 @app.get("/habits", response_model=List[Habit])
-def list_habits(current_user=Depends(get_current_user)):
-    return [h for h in _DB["habits"] if h.owner_id == current_user["user_id"]]
+def list_habits(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return db.query(HabitDB).filter(HabitDB.owner_id == current_user["user_id"]).all()
 
 
 @app.get("/habits/{habit_id}", response_model=Habit)
-def get_habit(habit_id: int, current_user=Depends(get_current_user)):
-    for h in _DB["habits"]:
-        if h.id == habit_id and h.owner_id == current_user["user_id"]:
-            return h
-    return problem(404, "Not found", "Habit not found")
+def get_habit(
+    habit_id: int,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    habit = (
+        db.query(HabitDB)
+        .filter(
+            HabitDB.id == habit_id,
+            HabitDB.owner_id == current_user["user_id"],
+        )
+        .first()
+    )
+    if not habit:
+        return problem(404, "Not found", "Habit not found")
+    return habit
 
 
 @app.post("/habits/{habit_id}/checkins", response_model=Checkin)
-def add_checkin(habit_id: int, checkin: CheckinCreate, current_user=Depends(get_current_user)):
-    habit = next(
-        (h for h in _DB["habits"] if h.id == habit_id and h.owner_id == current_user["user_id"]),
-        None,
+def add_checkin(
+    habit_id: int,
+    checkin: CheckinCreate,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    habit = (
+        db.query(HabitDB)
+        .filter(
+            HabitDB.id == habit_id,
+            HabitDB.owner_id == current_user["user_id"],
+        )
+        .first()
     )
     if not habit:
         return problem(404, "Not found", "Habit not found")
-    global _checkin_id_counter
-    _checkin_id_counter += 1
-    new_checkin = Checkin(id=_checkin_id_counter, habit_id=habit_id, **checkin.model_dump())
-    _DB["checkins"].append(new_checkin)
-    return new_checkin
+    db_checkin = CheckinDB(habit_id=habit_id, **checkin.model_dump())
+    db.add(db_checkin)
+    db.commit()
+    db.refresh(db_checkin)
+    return db_checkin
 
 
 @app.get("/habits/{habit_id}/checkins", response_model=List[Checkin])
-def list_checkins(habit_id: int, current_user=Depends(get_current_user)):
-    habit = next(
-        (h for h in _DB["habits"] if h.id == habit_id and h.owner_id == current_user["user_id"]),
-        None,
+def list_checkins(
+    habit_id: int,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    habit = (
+        db.query(HabitDB)
+        .filter(
+            HabitDB.id == habit_id,
+            HabitDB.owner_id == current_user["user_id"],
+        )
+        .first()
     )
     if not habit:
         return problem(404, "Not found", "Habit not found")
-    return [c for c in _DB["checkins"] if c.habit_id == habit_id]
+    return db.query(CheckinDB).filter(CheckinDB.habit_id == habit_id).all()
 
 
 @app.get("/stats")
-def get_stats(current_user=Depends(get_current_user)):
-    user_habits = [h for h in _DB["habits"] if h.owner_id == current_user["user_id"]]
-    user_checkins = [c for c in _DB["checkins"] if any(h.id == c.habit_id for h in user_habits)]
+def get_stats(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user_habits = db.query(HabitDB).filter(HabitDB.owner_id == current_user["user_id"]).all()
+    user_checkins = (
+        db.query(CheckinDB).filter(CheckinDB.habit_id.in_([h.id for h in user_habits])).all()
+    )
     return {
         "total_habits": len(user_habits),
         "total_checkins": len(user_checkins),
