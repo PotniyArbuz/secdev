@@ -57,11 +57,16 @@ def test_invalid_periodicity():
     resp = client.post("/habits", json={"title": "Run", "periodicity": "invalid"}, headers=headers)
     assert resp.status_code == 422
     data = resp.json()
+
     assert data["type"] == "about:blank"
     assert data["title"] == "Invalid input"
     assert data["status"] == 422
-    assert data["detail"] == "Periodicity must be 'daily' or 'weekly'"
     assert "correlation_id" in data
+
+    assert any(
+        err["loc"] == "body.periodicity" and "Input should be 'daily' or weekly" in err["msg"]
+        for err in data["detail"]
+    )
 
 
 def test_stats():

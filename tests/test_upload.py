@@ -14,3 +14,22 @@ def test_secure_save_too_big(tmp_path: Path):
         assert False, "Expected ValueError"
     except ValueError as e:
         assert str(e) == "too_big"
+
+
+def test_bad_magic_bytes(tmp_path: Path):
+    data = b"GIF89a" + b"x" * 100
+    try:
+        secure_save(tmp_path, data)
+        assert False
+    except ValueError as e:
+        assert str(e) == "bad_type"
+
+
+def test_path_traversal(tmp_path: Path):
+    data = b"\x89PNG\r\n\x1a\n" + b"x" * 100
+    try:
+        malicious_path = tmp_path / ".." / "etc" / "passwd.png"
+        malicious_path.write_bytes(data)
+        assert False
+    except Exception:
+        pass

@@ -39,24 +39,29 @@ def get_db():
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
     if token != "fake-token":
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "type": "about:blank",
-                "title": "Unauthorized",
-                "status": 401,
-                "detail": "Invalid token",
-                "correlation_id": str(uuid4()),
-            },
-            headers={"Content-Type": "application/problem+json"},
-        )
+        return problem(401, "Unauthorized", "Invalid token", extras={"type": "about:blank"})
     return {"user_id": 1}
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    message = "Periodicity must be 'daily' or 'weekly'" if "periodicity" in str(exc) else str(exc)
-    return problem(422, "Invalid input", message)
+async def validation_exception_handler(request, exc: RequestValidationError):
+    errors_list = []
+    for err in exc.errors():
+        loc = ".".join(str(loc_part) for loc_part in err.get("loc", []))
+        msg = err.get("msg", "")
+        errors_list.append({"loc": loc, "msg": msg, "type": err.get("type")})
+
+    return JSONResponse(
+        status_code=422,
+        content={
+            "type": "about:blank",
+            "title": "Invalid input",
+            "status": 422,
+            "detail": errors_list,
+            "correlation_id": str(uuid4()),
+        },
+        headers={"Content-Type": "application/problem+json"},
+    )
 
 
 @app.exception_handler(HTTPException)
@@ -68,17 +73,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             headers={"Content-Type": "application/problem+json"},
         )
     if exc.status_code == 401 and exc.detail == "Not authenticated":
-        return JSONResponse(
-            status_code=401,
-            content={
-                "type": "about:blank",
-                "title": "Unauthorized",
-                "status": 401,
-                "detail": "Invalid token",
-                "correlation_id": str(uuid4()),
-            },
-            headers={"Content-Type": "application/problem+json"},
-        )
+        return problem(401, "Unauthorized", "Invalid token")
     return problem(exc.status_code, exc.detail or "Error", str(exc.detail))
 
 
@@ -87,7 +82,7 @@ async def upload_avatar(file: UploadFile, current_user=Depends(get_current_user)
     try:
         data = await file.read()
         path = secure_save(UPLOAD_DIR, data)
-        return {"filename": path}
+        return {"filename": str(path)}
     except ValueError as e:
         return problem(400, "Invalid file", str(e))
 
