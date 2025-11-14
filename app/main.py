@@ -10,9 +10,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db import Base
-from app.db import Checkin as CheckinDB
-from app.db import Habit as HabitDB
+from app.db import Base, Checkin as CheckinDB, Habit as HabitDB
 from app.errors import problem
 from app.models import Checkin, CheckinCreate, Habit, HabitCreate
 from app.upload import secure_save
